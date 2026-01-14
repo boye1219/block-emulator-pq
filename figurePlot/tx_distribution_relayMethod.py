@@ -1,3 +1,4 @@
+import os
 import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -5,6 +6,8 @@ import matplotlib.pyplot as plt
 # 读取CSV文件
 file_path = './expTest/result/supervisor_measureOutput/Tx_Details.csv'  # 替换为你的CSV文件路径
 df = pd.read_csv(file_path)
+
+full_path = os.path.join('./expTest', 'TCL_relay.png')
 
 # 提取 "Confirmed latency of this tx (ms)" 列
 latency_column = 'Confirmed latency of this tx (ms)'
@@ -41,5 +44,6 @@ plt.title('Distribution of Confirmed Latency of This Tx (ms)')
 plt.xlabel('Confirmed Latency (ms)')
 plt.ylabel('Density')
 
-# 显示图表
-plt.show()
+
+plt.savefig(full_path)
+plt.close()

@@ -45,9 +45,13 @@ func data2tx(data []string, nonce uint64) (*core.Transaction, bool) {
 	if data[6] == "0" && data[7] == "0" && len(data[3]) > 16 && len(data[4]) > 16 && data[3] != data[4] {
 		val, ok := new(big.Int).SetString(data[8], 10)
 		if !ok {
-			log.Panic("new int failed\n")
+			log.Panic("new value int failed\n")
 		}
-		tx := core.NewTransaction(data[3][2:], data[4][2:], val, nonce, time.Now())
+		gasprice, ok := new(big.Int).SetString(data[10], 10)
+		if !ok {
+			log.Panic("new gasprice int failed\n")
+		}
+		tx := core.NewTransaction(data[3][2:], data[4][2:], val, gasprice, nonce, time.Now())
 		return tx, true
 	}
 	return &core.Transaction{}, false
