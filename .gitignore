@@ -1,8 +1,16 @@
 # 不要上传实验结果！
 # Do not upload your experimental results!
-expTest
+expTest/
+dataset/
+venv/
+.venv/
+misc/
+figure/
+script/
 
 # 不要上传可执行文件！
 # Do not upload your executable files!
 *.exe
-
+*.csv 
+linux_exe_run_IpAddr=127_0_0_1.sh
+blockEmulator_linux_Precompile

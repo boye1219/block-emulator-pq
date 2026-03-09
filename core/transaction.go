@@ -19,6 +19,7 @@ type Transaction struct {
 	Nonce     uint64
 	Signature []byte // not implemented now.
 	Value     *big.Int
+	Priority  *big.Int
 	TxHash    []byte
 
 	Time time.Time // TimeStamp the tx proposed.
@@ -71,11 +72,12 @@ func DecodeTx(to_decode []byte) *Transaction {
 }
 
 // new a transaction
-func NewTransaction(sender, recipient string, value *big.Int, nonce uint64, proposeTime time.Time) *Transaction {
+func NewTransaction(sender, recipient string, value *big.Int, priority *big.Int, nonce uint64, proposeTime time.Time) *Transaction {
 	tx := &Transaction{
 		Sender:    sender,
 		Recipient: recipient,
 		Value:     value,
+		Priority:  priority,
 		Nonce:     nonce,
 		Time:      proposeTime,
 	}

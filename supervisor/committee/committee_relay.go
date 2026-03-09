@@ -45,9 +45,13 @@ func data2tx(data []string, nonce uint64) (*core.Transaction, bool) {
 	if data[6] == "0" && data[7] == "0" && len(data[3]) > 16 && len(data[4]) > 16 && data[3] != data[4] {
 		val, ok := new(big.Int).SetString(data[8], 10)
 		if !ok {
-			log.Panic("new int failed\n")
+			log.Panic("new value int failed\n")
 		}
-		tx := core.NewTransaction(data[3][2:], data[4][2:], val, nonce, time.Now())
+		priority, ok := new(big.Int).SetString(data[10], 10)
+		if !ok {
+			log.Panic("new gasprice int failed\n")
+		}
+		tx := core.NewTransaction(data[3][2:], data[4][2:], val, priority, nonce, time.Now())
 		return tx, true
 	}
 	return &core.Transaction{}, false
@@ -59,20 +63,27 @@ func (rthm *RelayCommitteeModule) txSending(txlist []*core.Transaction) {
 	// the txs will be sent
 	sendToShard := make(map[uint64][]*core.Transaction)
 
+	// burst all txs in t = 0
 	for idx := 0; idx <= len(txlist); idx++ {
-		if idx > 0 && (idx%params.InjectSpeed == 0 || idx == len(txlist)) {
+		if idx > 0 && (idx % params.InjectSpeed == 0 || idx == len(txlist)) {
 			// send to shard
 			for sid := uint64(0); sid < uint64(params.ShardNum); sid++ {
-				it := message.InjectTxs{
-					Txs:       sendToShard[sid],
-					ToShardID: sid,
-				}
-				itByte, err := json.Marshal(it)
-				if err != nil {
-					log.Panic(err)
-				}
-				send_msg := message.MergeMessage(message.CInject, itByte)
-				go networks.TcpDial(send_msg, rthm.IpNodeTable[sid][0])
+				thisSid := sid
+				thisTxs := sendToShard[sid]
+				
+				go func(targetSid uint64, txs []*core.Transaction) {
+					it := message.InjectTxs{
+						Txs:       txs,
+						ToShardID: targetSid,
+					}
+					// add time consuming Marshal into message
+					itByte, err := json.Marshal(it)
+					if err != nil {
+						log.Panic(err)
+					}
+					send_msg := message.MergeMessage(message.CInject, itByte)
+					networks.TcpDial(send_msg, rthm.IpNodeTable[targetSid][0])
+				}(thisSid, thisTxs)
 			}
 			sendToShard = make(map[uint64][]*core.Transaction)
 			time.Sleep(time.Second)

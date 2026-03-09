@@ -1,5 +1,5 @@
 {
-  "ConsensusMethod": 0,
+  "ConsensusMethod": 3,
   
   "PbftViewChangeTimeOut":20000,
 
@@ -11,17 +11,17 @@
   "BlocksizeInBytes": 200000,
   "UseBlocksizeInBytes": 0,
 
-  "InjectSpeed": 2000,
-  "TotalDataSize": 160000,
-  "TxBatchSize": 16000,
+  "InjectSpeed": 300000,
+  "TotalDataSize": 300000,
+  "TxBatchSize": 300000,
 
   "BrokerNum": 10,
   "RelayWithMerkleProof": 0,
   
-  "DatasetFile": "./selectedTxs_300K.csv",
+  "DatasetFile": "./dataset/itx_priority/S8N4/BlockTransaction_300000_ctr=50.csv",
   "ReconfigTimeGap": 50,
 
-  "Delay": -1,
-  "JitterRange": -1,
-  "Bandwidth":10000000
+  "Delay": 100,
+  "JitterRange": 20,
+  "Bandwidth":1000000000
 }

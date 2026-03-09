@@ -4,21 +4,54 @@ package core
 
 import (
 	"blockEmulator/utils"
+	"container/heap"
+	"fmt"
+	"math/big"
 	"sync"
 	"time"
 	"unsafe"
 )
 
+type TxPriorityQueue []*Transaction
+
+func (pq TxPriorityQueue) Len() int { return len(pq) }
+
+func (pq TxPriorityQueue) Less(i, j int) bool { 
+	if pq[i].Priority.Cmp(pq[j].Priority) != 0 {
+		return pq[i].Priority.Cmp(pq[j].Priority) > 0
+	}
+	return pq[i].Time.Before(pq[j].Time)
+}
+
+func (pq TxPriorityQueue) Swap(i, j int) {
+	pq[i], pq[j] = pq[j], pq[i]
+}
+
+func (pq *TxPriorityQueue) Push(x any) {
+	tx := x.(*Transaction)
+	*pq = append(*pq, tx)
+}
+
+func (pq *TxPriorityQueue) Pop() any {
+	old := *pq
+	n := pq.Len()
+	x := old[n-1]
+	*pq = old[0 : n-1]
+	return x
+}
+
 type TxPool struct {
-	TxQueue   []*Transaction            // transaction Queue
-	RelayPool map[uint64][]*Transaction //designed for sharded blockchain, from Monoxide
+	TxQueue   *TxPriorityQueue          // transaction queue
+	RelayPool map[uint64][]*Transaction // designed for sharded blockchain, from Monoxide
 	lock      sync.Mutex
 	// The pending list is ignored
 }
 
 func NewTxPool() *TxPool {
+	pq := make(TxPriorityQueue, 0)
+	heap.Init(&pq)
 	return &TxPool{
-		TxQueue:   make([]*Transaction, 0),
+		TxQueue:   &pq,
 		RelayPool: make(map[uint64][]*Transaction),
 	}
 }
@@ -30,7 +63,7 @@ func (txpool *TxPool) AddTx2Pool(tx *Transaction) {
 	if tx.Time.IsZero() {
 		tx.Time = time.Now()
 	}
-	txpool.TxQueue = append(txpool.TxQueue, tx)
+	heap.Push(txpool.TxQueue, tx)
 }
 
 // Add a list of transactions to the pool
@@ -41,28 +74,44 @@ func (txpool *TxPool) AddTxs2Pool(txs []*Transaction) {
 		if tx.Time.IsZero() {
 			tx.Time = time.Now()
 		}
-		txpool.TxQueue = append(txpool.TxQueue, tx)
+		heap.Push(txpool.TxQueue, tx)
 	}
-}
-
-// add transactions into the pool head
-func (txpool *TxPool) AddTxs2Pool_Head(tx []*Transaction) {
-	txpool.lock.Lock()
-	defer txpool.lock.Unlock()
-	txpool.TxQueue = append(tx, txpool.TxQueue...)
 }
 
 // Pack transactions for a proposal
-func (txpool *TxPool) PackTxs(max_txs uint64) []*Transaction {
-	txpool.lock.Lock()
-	defer txpool.lock.Unlock()
-	txNum := max_txs
-	if uint64(len(txpool.TxQueue)) < txNum {
-		txNum = uint64(len(txpool.TxQueue))
-	}
-	txs_Packed := txpool.TxQueue[:txNum]
-	txpool.TxQueue = txpool.TxQueue[txNum:]
-	return txs_Packed
+func (txpool *TxPool) PackTxs(maxTxs uint64) []*Transaction {
+    txpool.lock.Lock()
+    defer txpool.lock.Unlock()
+
+    qLen := uint64(txpool.TxQueue.Len())
+    if qLen < maxTxs {
+        maxTxs = qLen
+    }
+
+    if maxTxs == 0 {
+        fmt.Println("Packed 0 transactions, average Priority: 0")
+        return nil
+    }
+
+    txsPacked := make([]*Transaction, 0, maxTxs)
+    totalPriority := new(big.Int)
+
+    for i := uint64(0); i < maxTxs; i++ {
+        tx := heap.Pop(txpool.TxQueue).(*Transaction)
+        txsPacked = append(txsPacked, tx)
+        
+        if tx.Priority != nil {
+            totalPriority.Add(totalPriority, tx.Priority)
+        }
+    }
+
+    txCount := big.NewInt(int64(maxTxs))
+    avgPriority := new(big.Int).Div(totalPriority, txCount)
+
+    fmt.Printf("==================== Packed %d transactions, Average Priority: %s ====================\n",
+                len(txsPacked), avgPriority.String())
+
+    return txsPacked
 }
 
 // Pack transaction for a proposal (use 'BlocksizeInBytes' to control)
@@ -70,18 +119,17 @@ func (txpool *TxPool) PackTxsWithBytes(max_bytes int) []*Transaction {
 	txpool.lock.Lock()
 	defer txpool.lock.Unlock()
 
-	txNum := len(txpool.TxQueue)
+	txs_Packed := make([]*Transaction, 0)
 	currentSize := 0
-	for tx_idx, tx := range txpool.TxQueue {
+
+	for txpool.TxQueue.Len() > 0 {
+		tx := heap.Pop(txpool.TxQueue).(*Transaction)
 		currentSize += int(unsafe.Sizeof(*tx))
+		txs_Packed = append(txs_Packed, tx)
 		if currentSize > max_bytes {
-			txNum = tx_idx
 			break
 		}
 	}
-
-	txs_Packed := txpool.TxQueue[:txNum]
-	txpool.TxQueue = txpool.TxQueue[txNum:]
 	return txs_Packed
 }
 
@@ -89,10 +137,7 @@ func (txpool *TxPool) PackTxsWithBytes(max_bytes int) []*Transaction {
 func (txpool *TxPool) AddRelayTx(tx *Transaction, shardID uint64) {
 	txpool.lock.Lock()
 	defer txpool.lock.Unlock()
-	_, ok := txpool.RelayPool[shardID]
-	if !ok {
-		txpool.RelayPool[shardID] = make([]*Transaction, 0)
-	}
+	
 	txpool.RelayPool[shardID] = append(txpool.RelayPool[shardID], tx)
 }
 
@@ -110,14 +155,15 @@ func (txpool *TxPool) GetUnlocked() {
 func (txpool *TxPool) GetTxQueueLen() int {
 	txpool.lock.Lock()
 	defer txpool.lock.Unlock()
-	return len(txpool.TxQueue)
+	return txpool.TxQueue.Len()
 }
 
 // get the length of ClearRelayPool
 func (txpool *TxPool) ClearRelayPool() {
 	txpool.lock.Lock()
 	defer txpool.lock.Unlock()
-	txpool.RelayPool = nil
+	
+	txpool.RelayPool = make(map[uint64][]*Transaction)
 }
 
 // abort ! Pack relay transactions from relay pool
@@ -143,15 +189,30 @@ func (txpool *TxPool) PackRelayTxs(shardID, minRelaySize, maxRelaySize uint64) (
 func (txpool *TxPool) TransferTxs(addr utils.Address) []*Transaction {
 	txpool.lock.Lock()
 	defer txpool.lock.Unlock()
+
 	txTransfered := make([]*Transaction, 0)
-	newTxQueue := make([]*Transaction, 0)
-	for _, tx := range txpool.TxQueue {
+	newTxHeap := make(TxPriorityQueue, 0)
+
+	// Pop all transactions from the heap
+	tempTxs := make([]*Transaction, 0)
+	for txpool.TxQueue.Len() > 0 {
+		tempTxs = append(tempTxs, heap.Pop(txpool.TxQueue).(*Transaction))
+	}
+
+	// Separate transactions by sender
+	for _, tx := range tempTxs {
 		if tx.Sender == addr {
 			txTransfered = append(txTransfered, tx)
 		} else {
-			newTxQueue = append(newTxQueue, tx)
+			newTxHeap = append(newTxHeap, tx)
 		}
 	}
+
+	// Rebuild the heap with remaining transactions
+	heap.Init(&newTxHeap)
+	txpool.TxQueue = &newTxHeap
+
+	// Process relay pool
 	newRelayPool := make(map[uint64][]*Transaction)
 	for shardID, shardPool := range txpool.RelayPool {
 		for _, tx := range shardPool {
@@ -165,7 +226,6 @@ func (txpool *TxPool) TransferTxs(addr utils.Address) []*Transaction {
 			}
 		}
 	}
-	txpool.TxQueue = newTxQueue
 	txpool.RelayPool = newRelayPool
 	return txTransfered
 }
